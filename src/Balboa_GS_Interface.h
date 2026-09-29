@@ -15,9 +15,9 @@ const unsigned long buttonPressTimerMillis  = 500; 		// Timer between update tem
 const long WaterTempInterval 				= 10000;    // Timer for uppdating water tempreture every 10sec
 
 // Pump icon classification / stabilization tuning
-const unsigned long pumpVisualWindowMillis  = 3000;    // Covers multiple transitions at the panel's ~1s blink cadence
+const unsigned long pumpVisualWindowMillis  = 1000;    // Covers multiple transitions at the panel's ~1s blink cadence
 const byte          pumpFlashToggleThreshold = 2;      // Minimum raw bit toggles within a window to call it "flashing"
-const unsigned long pumpModeStableMillis    = 1000;    // A newly detected mode must persist this long before it is published
+const unsigned long pumpModeStableMillis    = 250;     // A newly detected mode must persist this long before it is published
 const byte          pumpCommandQueueSize     = 16;
 
 
@@ -30,10 +30,14 @@ class BalboaInterface {
 
 	// Semantic pump modes, derived from the display icon behaviour (off / flashing / solid)
 	enum Pump1Mode { PUMP1_MODE_OFF = 0, PUMP1_MODE_LOW = 1, PUMP1_MODE_HIGH = 2 };
-	enum Pump2Mode { PUMP2_MODE_OFF = 0, PUMP2_MODE_ON  = 1 };
+	// NOTE: Pump2 icon semantics are spa-specific. On this spa's panel, Pump2 is a single-speed
+	// pump whose icon flashes ("low") while it is actually running and shows solid ("high") while
+	// it is actually off. Keep off/low/high distinct here rather than collapsing to off/on so that
+	// pump2ModeString() and the Pump2 bool can reflect the true running state (see classifyPump2()).
+	enum Pump2Mode { PUMP2_MODE_OFF = 0, PUMP2_MODE_LOW = 1, PUMP2_MODE_HIGH = 2 };
 
 	String pump1ModeString();							// "off" | "low" | "high"
-	String pump2ModeString();							// "off" | "on"
+	String pump2ModeString();							// "off" | "low" | "high"
 	
 	// Interface control
 	void begin();										// Initializes the stream output to Serial by default
@@ -97,9 +101,10 @@ rdr or DRAIN WATER Message
 	bool rawPump1;					// Raw Pump 1 display icon segment: on while solid, and toggling on/off while flashing | Bit 48
 	bool rawPump2;					// Raw Pump 2 display icon segment: on while solid, and toggling on/off while flashing | Bit 49
 	bool Pump1;        				// Compatibility bool, derived from pump1Mode (true if not off)
-	bool Pump2;        				// Compatibility bool, derived from pump2Mode (true if not off)
+	bool Pump2;        				// Compatibility bool, derived from pump2Mode; for this spa true only while the
+										// single-speed pump is actually running (flashing/low), false for off and solid/high
 	Pump1Mode pump1Mode = PUMP1_MODE_OFF;	// Semantic, stabilized Pump 1 mode: off/low/high
-	Pump2Mode pump2Mode = PUMP2_MODE_OFF;	// Semantic, stabilized Pump 2 mode: off/on
+	Pump2Mode pump2Mode = PUMP2_MODE_OFF;	// Semantic, stabilized Pump 2 mode: off/low/high (spa-specific, see Pump2Mode)
 	bool STOP;						// Fillter STOP time  							| Bit 50			
 	bool displayBit51;				// Still unknown functionality, if at all used! | Bit 51
 	bool displayBit52;				// Still unknown functionality, if at all used! | Bit 52
