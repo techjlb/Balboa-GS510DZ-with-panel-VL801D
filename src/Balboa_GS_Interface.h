@@ -157,11 +157,16 @@ rdr or DRAIN WATER Message
 	// Pump icon classification: distinguish "off" / "flashing" / "solid" visual states
 	// from the raw display bit, since the panel blinks the icon to indicate low speed.
 	enum PumpVisualState { PUMP_VISUAL_OFF, PUMP_VISUAL_FLASHING, PUMP_VISUAL_SOLID };
+	// Shared window/toggle-detection helper used by both pumps. Returns true (and a fresh
+	// visual classification via 'visualState') once a full sampling window has elapsed.
+	bool updatePumpVisualState(bool rawState, bool &prevRaw, unsigned long &windowStartMillis, bool &windowStarted,
+								byte &toggleCount, PumpVisualState &visualState);
 	void classifyPump1();
 	void classifyPump2();
 
 	bool pump1PrevRaw;
 	unsigned long pump1WindowStartMillis;
+	bool pump1WindowStarted;
 	byte pump1ToggleCount;
 	PumpVisualState pump1VisualState;
 	Pump1Mode pump1PendingMode;
@@ -169,6 +174,7 @@ rdr or DRAIN WATER Message
 
 	bool pump2PrevRaw;
 	unsigned long pump2WindowStartMillis;
+	bool pump2WindowStarted;
 	byte pump2ToggleCount;
 	PumpVisualState pump2VisualState;
 	Pump2Mode pump2PendingMode;

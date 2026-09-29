@@ -34,6 +34,7 @@ BalboaInterface::BalboaInterface(byte setClockPin, byte setReadPin, byte setWrit
 
   pump1PrevRaw             = false;
   pump1WindowStartMillis   = 0;
+  pump1WindowStarted       = false;
   pump1ToggleCount         = 0;
   pump1VisualState         = PUMP_VISUAL_OFF;
   pump1PendingMode         = PUMP1_MODE_OFF;
@@ -41,6 +42,7 @@ BalboaInterface::BalboaInterface(byte setClockPin, byte setReadPin, byte setWrit
 
   pump2PrevRaw             = false;
   pump2WindowStartMillis   = 0;
+  pump2WindowStarted       = false;
   pump2ToggleCount         = 0;
   pump2VisualState         = PUMP_VISUAL_OFF;
   pump2PendingMode         = PUMP2_MODE_OFF;
@@ -496,28 +498,45 @@ void BalboaInterface::decodeDisplayData() {
             attachInterrupt(clockPin, clockPinInterrupt, CHANGE);
 }
 
+// Shared window/toggle-detection logic for both pumps. Counts raw bit toggles within a
+// short sampling window; once the window elapses it classifies the icon as off/flashing/solid
+// and starts a new window. Uses a dedicated 'windowStarted' flag (rather than comparing
+// windowStartMillis to 0) so this remains correct across a millis() rollover.
+bool BalboaInterface::updatePumpVisualState(bool rawState, bool &prevRaw, unsigned long &windowStartMillis, bool &windowStarted,
+											 byte &toggleCount, PumpVisualState &visualState) {
+
+    unsigned long now = millis();
+
+    if (rawState != prevRaw) {
+        toggleCount++;
+        prevRaw = rawState;
+    }
+
+    if (!windowStarted) {
+        windowStartMillis = now;
+        windowStarted = true;
+    }
+
+    if (now - windowStartMillis >= pumpVisualWindowMillis) {
+
+        if      (toggleCount >= pumpFlashToggleThreshold) { visualState = PUMP_VISUAL_FLASHING; }
+        else if (rawState)                                { visualState = PUMP_VISUAL_SOLID;    }
+        else                                               { visualState = PUMP_VISUAL_OFF;      }
+
+        windowStartMillis = now;
+        toggleCount = 0;
+        return true;
+    }
+
+    return false;
+}
+
 // Classify the Pump 1 icon behaviour into off/flashing/solid over a short sampling window,
 // then map that visual state to a semantic mode, only publishing the new mode once it has
 // been consistently detected for pumpModeStableMillis (so a single transient frame can't flip it).
 void BalboaInterface::classifyPump1() {
 
-    unsigned long now = millis();
-
-    if (rawPump1 != pump1PrevRaw) {
-        pump1ToggleCount++;
-        pump1PrevRaw = rawPump1;
-    }
-
-    if (pump1WindowStartMillis == 0) { pump1WindowStartMillis = now; }
-
-    if (now - pump1WindowStartMillis >= pumpVisualWindowMillis) {
-
-        if (pump1ToggleCount >= pumpFlashToggleThreshold) { pump1VisualState = PUMP_VISUAL_FLASHING; }
-        else if (rawPump1)                                { pump1VisualState = PUMP_VISUAL_SOLID;    }
-        else                                               { pump1VisualState = PUMP_VISUAL_OFF;      }
-
-        pump1WindowStartMillis = now;
-        pump1ToggleCount = 0;
+    if (updatePumpVisualState(rawPump1, pump1PrevRaw, pump1WindowStartMillis, pump1WindowStarted, pump1ToggleCount, pump1VisualState)) {
 
         // Pump 1: flashing icon = low speed, solid icon = high speed, off = off
         Pump1Mode target;
@@ -525,6 +544,7 @@ void BalboaInterface::classifyPump1() {
         else if (pump1VisualState == PUMP_VISUAL_SOLID)    { target = PUMP1_MODE_HIGH; }
         else                                                { target = PUMP1_MODE_OFF;  }
 
+        unsigned long now = millis();
         if (target != pump1PendingMode) {
             pump1PendingMode        = target;
             pump1PendingSinceMillis = now;
@@ -541,27 +561,12 @@ void BalboaInterface::classifyPump1() {
 // flashing icon indicate the pump is running, so either visual state is mapped to "on".
 void BalboaInterface::classifyPump2() {
 
-    unsigned long now = millis();
-
-    if (rawPump2 != pump2PrevRaw) {
-        pump2ToggleCount++;
-        pump2PrevRaw = rawPump2;
-    }
-
-    if (pump2WindowStartMillis == 0) { pump2WindowStartMillis = now; }
-
-    if (now - pump2WindowStartMillis >= pumpVisualWindowMillis) {
-
-        if (pump2ToggleCount >= pumpFlashToggleThreshold) { pump2VisualState = PUMP_VISUAL_FLASHING; }
-        else if (rawPump2)                                { pump2VisualState = PUMP_VISUAL_SOLID;    }
-        else                                               { pump2VisualState = PUMP_VISUAL_OFF;      }
-
-        pump2WindowStartMillis = now;
-        pump2ToggleCount = 0;
+    if (updatePumpVisualState(rawPump2, pump2PrevRaw, pump2WindowStartMillis, pump2WindowStarted, pump2ToggleCount, pump2VisualState)) {
 
         // Pump 2: flashing or solid icon both mean the pump is active/on, off means off
         Pump2Mode target = (pump2VisualState == PUMP_VISUAL_OFF) ? PUMP2_MODE_OFF : PUMP2_MODE_ON;
 
+        unsigned long now = millis();
         if (target != pump2PendingMode) {
             pump2PendingMode        = target;
             pump2PendingSinceMillis = now;
