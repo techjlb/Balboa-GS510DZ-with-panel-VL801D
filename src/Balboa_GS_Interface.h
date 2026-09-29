@@ -14,6 +14,11 @@ const unsigned int durationNewCycle    		= 10000;	// How many microsecounds to d
 const unsigned long buttonPressTimerMillis  = 500; 		// Timer between update temperature button presses 0.5sec
 const long WaterTempInterval 				= 10000;    // Timer for uppdating water tempreture every 10sec
 
+// Pump icon classification / stabilization tuning
+const unsigned long pumpVisualWindowMillis  = 1000;    // Sampling window used to classify off/flashing/solid
+const byte          pumpFlashToggleThreshold = 2;      // Minimum raw bit toggles within a window to call it "flashing"
+const unsigned long pumpModeStableMillis    = 1000;    // A newly detected mode must persist this long before it is published
+
 
 
 class BalboaInterface {
@@ -21,6 +26,13 @@ class BalboaInterface {
   public:
 	
 	BalboaInterface(byte setClockPin, byte setReadPin, byte setWritePin);
+
+	// Semantic pump modes, derived from the display icon behaviour (off / flashing / solid)
+	enum Pump1Mode { PUMP1_MODE_OFF = 0, PUMP1_MODE_LOW = 1, PUMP1_MODE_HIGH = 2 };
+	enum Pump2Mode { PUMP2_MODE_OFF = 0, PUMP2_MODE_ON  = 1 };
+
+	String pump1ModeString();							// "off" | "low" | "high"
+	String pump2ModeString();							// "off" | "on"
 	
 	// Interface control
 	void begin();										// Initializes the stream output to Serial by default
@@ -79,8 +91,12 @@ rdr or DRAIN WATER Message
 	bool displayBit45;				// Jumps on/off									| Bit 45			*Pulse on/off 1 sec every 1-5min
 	bool displayBit46;				// Still unknown functionality, if at all used! | Bit 46			* shows as 0 or off havent got it to change
 	bool Lights;        			// SPA lights activated or not 					| Bit 47
-	bool Pump1;        				// Pump 1 running or not 						| Bit 48
-	bool Pump2;        				// Pump 2 running or not						| Bit 49
+	bool rawPump1;					// Raw Pump 1 display icon segment (on when solid AND when flashing) | Bit 48
+	bool rawPump2;					// Raw Pump 2 display icon segment (on when solid AND when flashing) | Bit 49
+	bool Pump1;        				// Compatibility bool, derived from pump1Mode (true if not off)
+	bool Pump2;        				// Compatibility bool, derived from pump2Mode (true if not off)
+	Pump1Mode pump1Mode = PUMP1_MODE_OFF;	// Semantic, stabilized Pump 1 mode: off/low/high
+	Pump2Mode pump2Mode = PUMP2_MODE_OFF;	// Semantic, stabilized Pump 2 mode: off/on
 	bool STOP;						// Fillter STOP time  							| Bit 50			
 	bool displayBit51;				// Still unknown functionality, if at all used! | Bit 51
 	bool displayBit52;				// Still unknown functionality, if at all used! | Bit 52
@@ -137,6 +153,26 @@ rdr or DRAIN WATER Message
 	String LCD_display_2;
 	String LCD_display_3;
 	String LCD_display_4;  
+
+	// Pump icon classification: distinguish "off" / "flashing" / "solid" visual states
+	// from the raw display bit, since the panel blinks the icon to indicate low speed.
+	enum PumpVisualState { PUMP_VISUAL_OFF, PUMP_VISUAL_FLASHING, PUMP_VISUAL_SOLID };
+	void classifyPump1();
+	void classifyPump2();
+
+	bool pump1PrevRaw;
+	unsigned long pump1WindowStartMillis;
+	byte pump1ToggleCount;
+	PumpVisualState pump1VisualState;
+	Pump1Mode pump1PendingMode;
+	unsigned long pump1PendingSinceMillis;
+
+	bool pump2PrevRaw;
+	unsigned long pump2WindowStartMillis;
+	byte pump2ToggleCount;
+	PumpVisualState pump2VisualState;
+	Pump2Mode pump2PendingMode;
+	unsigned long pump2PendingSinceMillis;
 	static byte displayDataBuffer[displayDataBufferSize]; 	// Array of display data measurements 
 	static unsigned long clockInterruptTime;
 	static int clockBitCounter;               		 		// Counter of pulses within a cycle

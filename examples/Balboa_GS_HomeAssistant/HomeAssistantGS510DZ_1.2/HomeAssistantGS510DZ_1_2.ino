@@ -92,6 +92,7 @@ HABinarySensor stdmode("StandardMode");
 
 HABinarySensor ecomode("EcoMode");
 HABinarySensor pump1("Pump1");
+HASensor pump1Mode("Pump1Mode");
 
 HABinarySensor Filter1("Filter1");
 HABinarySensor Filter2("Filter2");
@@ -109,17 +110,17 @@ HABinarySensor AM("AM");
 HABinarySensor PM("PM");
 
 HABinarySensor pump2("Pump2");
+HASensor pump2Mode("Pump2Mode");
 HABinarySensor blower("Blower");
 
 HABinarySensor lights("Lights");
 
-//Switches
-HASwitch pump1Switch("Pump1");      
-HASwitch pump2Switch("Pump2");   
+//Buttons
+HAButton pump1Button("Pump1");
+HAButton pump2Button("Pump2");
 HASwitch blowerSwitch("Blower");   
 HASwitch lightsSwitch("Lights");   
 
-//Buttons
 HAButton timeMenuButton("TimeMenu");
 HAButton modeProgButton("ModeProg");
 HAButton DownButton("Down");
@@ -239,12 +240,14 @@ void setup_HA() {
     STOP.setName("STOP");
 
     pump1.setName("Pump1");
-    pump1Switch.setName("Pump1");
-    pump1Switch.onCommand(onSwitchCommand);
+    pump1Mode.setName("Pump1 Mode");
+    pump1Button.setName("Pump1");
+    pump1Button.onCommand(onPump1Press);
 
     pump2.setName("Pump2");
-    pump2Switch.setName("Pump2");
-    pump2Switch.onCommand(onSwitchCommand);
+    pump2Mode.setName("Pump2 Mode");
+    pump2Button.setName("Pump2");
+    pump2Button.onCommand(onPump2Press);
 
     blower.setName("Blower");
     blowerSwitch.setName("Blower");
@@ -315,7 +318,9 @@ void loop() {
           ecomode.setState(Balboa.EcoMode);
           heater.setState(Balboa.Heater);                             // Get heater status
           pump1.setState(Balboa.Pump1);
+          pump1Mode.setValue(Balboa.pump1ModeString().c_str());
           pump2.setState(Balboa.Pump2);
+          pump2Mode.setValue(Balboa.pump2ModeString().c_str());
           blower.setState(Balboa.Blower);
           lights.setState(Balboa.Lights);
           Filter1.setState(Balboa.Filter1);
@@ -347,19 +352,7 @@ void onSwitchCommand(bool state, HASwitch* sender) {
   //String name = sender->getName();
   String s_payload = sender->getName();
 
-  if(s_payload == "Pump1") {
-    if(Balboa.Pump1 != state) {
-      Balboa.writeDisplayData = true;
-      Balboa.writePump1       = true;  
-    }
-  }
-  else if(s_payload == "Pump2") {
-    if(Balboa.Pump2 != state) {
-      Balboa.writeDisplayData = true;
-      Balboa.writePump2       = true;  
-    }
-  }
-  else if(s_payload == "Blower") {
+  if(s_payload == "Blower") {
     if(Balboa.Blower != state) {
       Balboa.writeDisplayData = true;
       Balboa.writeBlower       = true;  
@@ -376,6 +369,18 @@ void onSwitchCommand(bool state, HASwitch* sender) {
   }
 
 }
+//Pump buttons - the panel cycles pump modes on each press (off -> low -> high -> off for
+//Pump1, off -> on -> off for Pump2), so these are momentary commands rather than target states.
+void onPump1Press(HAButton* sender) {
+  Balboa.writeDisplayData = true;
+  Balboa.writePump1       = true;
+}
+
+void onPump2Press(HAButton* sender) {
+  Balboa.writeDisplayData = true;
+  Balboa.writePump2       = true;
+}
+
 //Buttons
 void onButtonPress(HAButton* sender) {
   

@@ -31,6 +31,20 @@ BalboaInterface::BalboaInterface(byte setClockPin, byte setReadPin, byte setWrit
   clockPin = setClockPin;
   displayPin = setReadPin;
   buttonPin = setWritePin;
+
+  pump1PrevRaw             = false;
+  pump1WindowStartMillis   = 0;
+  pump1ToggleCount         = 0;
+  pump1VisualState         = PUMP_VISUAL_OFF;
+  pump1PendingMode         = PUMP1_MODE_OFF;
+  pump1PendingSinceMillis  = 0;
+
+  pump2PrevRaw             = false;
+  pump2WindowStartMillis   = 0;
+  pump2ToggleCount         = 0;
+  pump2VisualState         = PUMP_VISUAL_OFF;
+  pump2PendingMode         = PUMP2_MODE_OFF;
+  pump2PendingSinceMillis  = 0;
      
 }
 
@@ -286,15 +300,15 @@ void BalboaInterface::decodeDisplayData() {
                   }
 				  else if (x == 48) {
                         if ( displayDataBuffer[x] == 1){
-                            Pump1 = true;
+                            rawPump1 = true;
                         }
-                        else Pump1 = false;
+                        else rawPump1 = false;
                   } 
 				  else if (x == 49) {
                         if ( displayDataBuffer[x] == 1){
-                            Pump2 = true;
+                            rawPump2 = true;
                         }
-                        else Pump2 = false;
+                        else rawPump2 = false;
                   } 
 				  else if (x == 50) {
                         if ( displayDataBuffer[x] == 1){
@@ -433,6 +447,11 @@ void BalboaInterface::decodeDisplayData() {
 				  
             } 
         
+			// Classify pump icon behaviour (off/flashing/solid) and derive stable semantic modes,
+			// so a blinking "low speed" icon is not reported to Home Assistant as rapid on/off toggling.
+			classifyPump1();
+			classifyPump2();
+
            LCD_display_1 = lockup_LCD_character(LCD_segment_4);
            LCD_display_2 = lockup_LCD_character(LCD_segment_3); 
            LCD_display_3 = lockup_LCD_character(LCD_segment_2);
@@ -475,6 +494,94 @@ void BalboaInterface::decodeDisplayData() {
                          
             displayDataBufferReady = false;
             attachInterrupt(clockPin, clockPinInterrupt, CHANGE);
+}
+
+// Classify the Pump 1 icon behaviour into off/flashing/solid over a short sampling window,
+// then map that visual state to a semantic mode, only publishing the new mode once it has
+// been consistently detected for pumpModeStableMillis (so a single transient frame can't flip it).
+void BalboaInterface::classifyPump1() {
+
+    unsigned long now = millis();
+
+    if (rawPump1 != pump1PrevRaw) {
+        pump1ToggleCount++;
+        pump1PrevRaw = rawPump1;
+    }
+
+    if (pump1WindowStartMillis == 0) { pump1WindowStartMillis = now; }
+
+    if (now - pump1WindowStartMillis >= pumpVisualWindowMillis) {
+
+        if (pump1ToggleCount >= pumpFlashToggleThreshold) { pump1VisualState = PUMP_VISUAL_FLASHING; }
+        else if (rawPump1)                                { pump1VisualState = PUMP_VISUAL_SOLID;    }
+        else                                               { pump1VisualState = PUMP_VISUAL_OFF;      }
+
+        pump1WindowStartMillis = now;
+        pump1ToggleCount = 0;
+
+        // Pump 1: flashing icon = low speed, solid icon = high speed, off = off
+        Pump1Mode target;
+        if      (pump1VisualState == PUMP_VISUAL_FLASHING) { target = PUMP1_MODE_LOW;  }
+        else if (pump1VisualState == PUMP_VISUAL_SOLID)    { target = PUMP1_MODE_HIGH; }
+        else                                                { target = PUMP1_MODE_OFF;  }
+
+        if (target != pump1PendingMode) {
+            pump1PendingMode        = target;
+            pump1PendingSinceMillis = now;
+        }
+        else if (target != pump1Mode && (now - pump1PendingSinceMillis) >= pumpModeStableMillis) {
+            pump1Mode = target;
+        }
+    }
+
+    Pump1 = (pump1Mode != PUMP1_MODE_OFF);
+}
+
+// Same classification approach as Pump 1. Pump 2 only has off/on, and both a solid and a
+// flashing icon indicate the pump is running, so either visual state is mapped to "on".
+void BalboaInterface::classifyPump2() {
+
+    unsigned long now = millis();
+
+    if (rawPump2 != pump2PrevRaw) {
+        pump2ToggleCount++;
+        pump2PrevRaw = rawPump2;
+    }
+
+    if (pump2WindowStartMillis == 0) { pump2WindowStartMillis = now; }
+
+    if (now - pump2WindowStartMillis >= pumpVisualWindowMillis) {
+
+        if (pump2ToggleCount >= pumpFlashToggleThreshold) { pump2VisualState = PUMP_VISUAL_FLASHING; }
+        else if (rawPump2)                                { pump2VisualState = PUMP_VISUAL_SOLID;    }
+        else                                               { pump2VisualState = PUMP_VISUAL_OFF;      }
+
+        pump2WindowStartMillis = now;
+        pump2ToggleCount = 0;
+
+        // Pump 2: flashing or solid icon both mean the pump is active/on, off means off
+        Pump2Mode target = (pump2VisualState == PUMP_VISUAL_OFF) ? PUMP2_MODE_OFF : PUMP2_MODE_ON;
+
+        if (target != pump2PendingMode) {
+            pump2PendingMode        = target;
+            pump2PendingSinceMillis = now;
+        }
+        else if (target != pump2Mode && (now - pump2PendingSinceMillis) >= pumpModeStableMillis) {
+            pump2Mode = target;
+        }
+    }
+
+    Pump2 = (pump2Mode != PUMP2_MODE_OFF);
+}
+
+String BalboaInterface::pump1ModeString() {
+    if      (pump1Mode == PUMP1_MODE_LOW)  { return "low";  }
+    else if (pump1Mode == PUMP1_MODE_HIGH) { return "high"; }
+    else                                    { return "off";  }
+}
+
+String BalboaInterface::pump2ModeString() {
+    return (pump2Mode == PUMP2_MODE_ON) ? "on" : "off";
 }
 
  ICACHE_RAM_ATTR void BalboaInterface::clockPinInterrupt() {
