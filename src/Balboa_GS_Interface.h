@@ -16,7 +16,13 @@ const long WaterTempInterval 				= 10000;    // Timer for uppdating water tempre
 
 // Pump icon classification / stabilization tuning
 const unsigned long pumpVisualWindowMillis  = 1000;    // Covers multiple transitions at the panel's ~1s blink cadence
-const byte          pumpFlashToggleThreshold = 2;      // Minimum raw bit toggles within a window to call it "flashing"
+// Minimum raw bit toggles within a window to call it "flashing". With the shorter
+// (1s) sampling window, a flashing icon may only produce a single observed edge inside
+// a given window depending on phase alignment with the window boundaries, so requiring
+// 2 toggles risked misclassifying flashing/low as "off". Using 1 reliably captures
+// flashing/low-speed icon behaviour at this window length; a solid/high icon still never
+// toggles, so it is unaffected and continues to be classified separately (see below).
+const byte          pumpFlashToggleThreshold = 1;
 const unsigned long pumpModeStableMillis    = 250;     // A newly detected mode must persist this long before it is published
 const byte          pumpCommandQueueSize     = 16;
 
