@@ -16,6 +16,10 @@ bool BalboaInterface::writeTempDown;
 bool BalboaInterface::writeLights;
 bool BalboaInterface::writePump1;
 bool BalboaInterface::writePump2;
+volatile byte BalboaInterface::pumpCommandQueue[pumpCommandQueueSize];
+volatile byte BalboaInterface::pumpCommandQueueHead;
+volatile byte BalboaInterface::pumpCommandQueueTail;
+byte BalboaInterface::activePumpCommand;
 bool BalboaInterface::writeBlower;
 bool BalboaInterface::writeTimeMenu;
 bool BalboaInterface::writeModeProg;
@@ -31,7 +35,53 @@ BalboaInterface::BalboaInterface(byte setClockPin, byte setReadPin, byte setWrit
   clockPin = setClockPin;
   displayPin = setReadPin;
   buttonPin = setWritePin;
+
+  pump1PrevRaw             = false;
+  pump1WindowStartMillis   = 0;
+  pump1WindowStarted       = false;
+  pump1ToggleCount         = 0;
+  pump1VisualState         = PUMP_VISUAL_OFF;
+  pump1PendingMode         = PUMP1_MODE_OFF;
+  pump1PendingSinceMillis  = 0;
+
+  pump2PrevRaw             = false;
+  pump2WindowStartMillis   = 0;
+  pump2WindowStarted       = false;
+  pump2ToggleCount         = 0;
+  pump2VisualState         = PUMP_VISUAL_OFF;
+  pump2PendingMode         = PUMP2_MODE_OFF;
+  pump2PendingSinceMillis  = 0;
      
+}
+
+bool BalboaInterface::queuePump1Press() {
+  return enqueuePumpCommand(1);
+}
+
+bool BalboaInterface::queuePump2Press() {
+  return enqueuePumpCommand(2);
+}
+
+bool BalboaInterface::enqueuePumpCommand(byte command) {
+  byte nextTail = (pumpCommandQueueTail + 1) % pumpCommandQueueSize;
+  if (nextTail == pumpCommandQueueHead) {
+    return false;
+  }
+
+  pumpCommandQueue[pumpCommandQueueTail] = command;
+  pumpCommandQueueTail = nextTail;
+  writeDisplayData = true;
+  return true;
+}
+
+byte BalboaInterface::dequeuePumpCommand() {
+  if (pumpCommandQueueHead == pumpCommandQueueTail) {
+    return 0;
+  }
+
+  byte command = pumpCommandQueue[pumpCommandQueueHead];
+  pumpCommandQueueHead = (pumpCommandQueueHead + 1) % pumpCommandQueueSize;
+  return command;
 }
 
 void BalboaInterface::begin() { 
@@ -286,15 +336,15 @@ void BalboaInterface::decodeDisplayData() {
                   }
 				  else if (x == 48) {
                         if ( displayDataBuffer[x] == 1){
-                            Pump1 = true;
+                            rawPump1 = true;
                         }
-                        else Pump1 = false;
+                        else rawPump1 = false;
                   } 
 				  else if (x == 49) {
                         if ( displayDataBuffer[x] == 1){
-                            Pump2 = true;
+                            rawPump2 = true;
                         }
-                        else Pump2 = false;
+                        else rawPump2 = false;
                   } 
 				  else if (x == 50) {
                         if ( displayDataBuffer[x] == 1){
@@ -433,6 +483,11 @@ void BalboaInterface::decodeDisplayData() {
 				  
             } 
         
+			// Classify pump icon behaviour (off/flashing/solid) and derive stable semantic modes,
+			// so a blinking "low speed" icon is not reported to Home Assistant as rapid on/off toggling.
+			classifyPump1();
+			classifyPump2();
+
            LCD_display_1 = lockup_LCD_character(LCD_segment_4);
            LCD_display_2 = lockup_LCD_character(LCD_segment_3); 
            LCD_display_3 = lockup_LCD_character(LCD_segment_2);
@@ -475,6 +530,103 @@ void BalboaInterface::decodeDisplayData() {
                          
             displayDataBufferReady = false;
             attachInterrupt(clockPin, clockPinInterrupt, CHANGE);
+}
+
+// Shared window/toggle-detection logic for both pumps. Counts raw bit toggles within a
+// short sampling window; once the window elapses it classifies the icon as off/flashing/solid
+// and starts a new window. The 'windowStarted' flag ensures the very first call seeds
+// windowStartMillis from the current millis() value, rather than treating an uninitialized
+// 0 as a real start time (the unsigned subtraction below already handles millis() rollover
+// correctly on its own).
+bool BalboaInterface::updatePumpVisualState(bool rawState, bool &prevRaw, unsigned long &windowStartMillis, bool &windowStarted,
+											 byte &toggleCount, PumpVisualState &visualState) {
+
+    unsigned long now = millis();
+
+    if (rawState != prevRaw) {
+        toggleCount++;
+        prevRaw = rawState;
+    }
+
+    if (!windowStarted) {
+        windowStartMillis = now;
+        windowStarted = true;
+    }
+
+    if (now - windowStartMillis >= pumpVisualWindowMillis) {
+
+        if      (toggleCount >= pumpFlashToggleThreshold) { visualState = PUMP_VISUAL_FLASHING; }
+        else if (rawState)                                { visualState = PUMP_VISUAL_SOLID;    }
+        else                                               { visualState = PUMP_VISUAL_OFF;      }
+
+        windowStartMillis = now;
+        toggleCount = 0;
+        return true;
+    }
+
+    return false;
+}
+
+// Shared stability-timer logic used by both pumps. See header for behaviour details.
+bool BalboaInterface::applyStableMode(int target, int currentMode, int &pendingMode, unsigned long &pendingSinceMillis) {
+
+    unsigned long now = millis();
+
+    if (target != pendingMode) {
+        pendingMode = target;
+        pendingSinceMillis = now;
+        return false;
+    }
+
+    return (target != currentMode && (now - pendingSinceMillis) >= pumpModeStableMillis);
+}
+
+// Classify the Pump 1 icon behaviour into off/flashing/solid over a short sampling window,
+// then map that visual state to a semantic mode, only publishing the new mode once it has
+// been consistently detected for pumpModeStableMillis (so a single transient frame can't flip it).
+void BalboaInterface::classifyPump1() {
+
+    if (updatePumpVisualState(rawPump1, pump1PrevRaw, pump1WindowStartMillis, pump1WindowStarted, pump1ToggleCount, pump1VisualState)) {
+
+        // Pump 1: flashing icon = low speed, solid icon = high speed, off = off
+        Pump1Mode target;
+        if      (pump1VisualState == PUMP_VISUAL_FLASHING) { target = PUMP1_MODE_LOW;  }
+        else if (pump1VisualState == PUMP_VISUAL_SOLID)    { target = PUMP1_MODE_HIGH; }
+        else                                                { target = PUMP1_MODE_OFF;  }
+
+        if (applyStableMode(target, pump1Mode, pump1PendingMode, pump1PendingSinceMillis)) {
+            pump1Mode = target;
+        }
+    }
+
+    Pump1 = (pump1Mode != PUMP1_MODE_OFF);
+}
+
+// Same classification approach as Pump 1. Pump 2 only has off/on, and both a solid and a
+// flashing icon indicate the pump is running, so either visual state is mapped to "on".
+void BalboaInterface::classifyPump2() {
+
+    if (updatePumpVisualState(rawPump2, pump2PrevRaw, pump2WindowStartMillis, pump2WindowStarted, pump2ToggleCount, pump2VisualState)) {
+
+        // Pump 2: flashing or solid icon both mean the pump is active/on, off means off
+        Pump2Mode target = (pump2VisualState == PUMP_VISUAL_OFF) ? PUMP2_MODE_OFF : PUMP2_MODE_ON;
+
+        if (applyStableMode(target, pump2Mode, pump2PendingMode, pump2PendingSinceMillis)) {
+            pump2Mode = target;
+        }
+    }
+
+    Pump2 = (pump2Mode != PUMP2_MODE_OFF);
+}
+
+String BalboaInterface::pump1ModeString() {
+    if      (pump1Mode == PUMP1_MODE_LOW)  { return "low";  }
+    else if (pump1Mode == PUMP1_MODE_HIGH) { return "high"; }
+    else                                    { return "off";  }
+}
+
+String BalboaInterface::pump2ModeString() {
+    return (pump2Mode == PUMP2_MODE_ON) ? "on" : "off";
 }
 
  ICACHE_RAM_ATTR void BalboaInterface::clockPinInterrupt() {
@@ -522,6 +674,7 @@ void BalboaInterface::decodeDisplayData() {
                                   else if (writeLights)      	{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump1)     		{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump2)     		{ digitalWrite(buttonPin,HIGH);  }
+                                  else if ((activePumpCommand = dequeuePumpCommand()) != 0) { digitalWrite(buttonPin,HIGH); }
 								  else if (writeTimeMenu)     	{ digitalWrite(buttonPin,HIGH);  }
 								  else if (writeModeProg)     	{ digitalWrite(buttonPin,HIGH);  } 	
                                   
@@ -537,6 +690,7 @@ void BalboaInterface::decodeDisplayData() {
                                   else if (writeLights)				{ digitalWrite(buttonPin,LOW);   }
                                   else if (writePump1)     	  		{ digitalWrite(buttonPin,LOW);   }
                                   else if (writePump2)     	  		{ digitalWrite(buttonPin,LOW);   }
+                                  else if (activePumpCommand == 1 || activePumpCommand == 2) { digitalWrite(buttonPin,LOW); }
 								  else if (writeTimeMenu)     	{ digitalWrite(buttonPin,HIGH);   }	
 								  else if (writeModeProg)     		{ digitalWrite(buttonPin,LOW);	 }	
                           }
@@ -552,6 +706,8 @@ void BalboaInterface::decodeDisplayData() {
                                   else if (writeLights)			{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump1)    	  		{ digitalWrite(buttonPin,LOW);   }
                                   else if (writePump2)			{ digitalWrite(buttonPin,HIGH);  }
+                                  else if (activePumpCommand == 1) { digitalWrite(buttonPin,LOW); }
+                                  else if (activePumpCommand == 2) { digitalWrite(buttonPin,HIGH); }
 								  else if (writeTimeMenu)     		{ digitalWrite(buttonPin,LOW);   } 
 								  else if (writeModeProg)     		{ digitalWrite(buttonPin,LOW);   } 
                           }
@@ -566,6 +722,8 @@ void BalboaInterface::decodeDisplayData() {
                                   else if (writeLights)   		{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump1)   	 	{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump2)				{ digitalWrite(buttonPin,LOW);   }
+                                  else if (activePumpCommand == 1) { digitalWrite(buttonPin,HIGH); }
+                                  else if (activePumpCommand == 2) { digitalWrite(buttonPin,LOW); }
 								  else if (writeTimeMenu)     		{ digitalWrite(buttonPin,LOW);   }    
 								  else if (writeModeProg)     		{ digitalWrite(buttonPin,LOW);   } 	
 
@@ -579,6 +737,7 @@ void BalboaInterface::decodeDisplayData() {
                                   writeBlower = false;
 								  writeTimeMenu = false;
 								  writeModeProg = false;
+                                  activePumpCommand = 0;
                         }
                   }
 
