@@ -92,7 +92,7 @@ HABinarySensor stdmode("StandardMode");
 
 HABinarySensor ecomode("EcoMode");
 HABinarySensor pump1("Pump1");
-HASensor pump1Mode("Pump1Mode");
+HASensor pump1ModeSensor("Pump1Mode");
 
 HABinarySensor Filter1("Filter1");
 HABinarySensor Filter2("Filter2");
@@ -110,7 +110,7 @@ HABinarySensor AM("AM");
 HABinarySensor PM("PM");
 
 HABinarySensor pump2("Pump2");
-HASensor pump2Mode("Pump2Mode");
+HASensor pump2ModeSensor("Pump2Mode");
 HABinarySensor blower("Blower");
 
 HABinarySensor lights("Lights");
@@ -240,12 +240,12 @@ void setup_HA() {
     STOP.setName("STOP");
 
     pump1.setName("Pump1");
-    pump1Mode.setName("Pump1 Mode");
+    pump1ModeSensor.setName("Pump1 Mode");
     pump1Button.setName("Pump1");
     pump1Button.onCommand(onPump1Press);
 
     pump2.setName("Pump2");
-    pump2Mode.setName("Pump2 Mode");
+    pump2ModeSensor.setName("Pump2 Mode");
     pump2Button.setName("Pump2");
     pump2Button.onCommand(onPump2Press);
 
@@ -318,9 +318,9 @@ void loop() {
           ecomode.setState(Balboa.EcoMode);
           heater.setState(Balboa.Heater);                             // Get heater status
           pump1.setState(Balboa.Pump1);
-          pump1Mode.setValue(Balboa.pump1ModeString().c_str());
+          pump1ModeSensor.setValue(Balboa.pump1ModeString().c_str());
           pump2.setState(Balboa.Pump2);
-          pump2Mode.setValue(Balboa.pump2ModeString().c_str());
+          pump2ModeSensor.setValue(Balboa.pump2ModeString().c_str());
           blower.setState(Balboa.Blower);
           lights.setState(Balboa.Lights);
           Filter1.setState(Balboa.Filter1);

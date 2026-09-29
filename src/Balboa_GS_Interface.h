@@ -163,6 +163,10 @@ rdr or DRAIN WATER Message
 	// uninitialized 0 value (the unsigned millis() subtraction itself already tolerates rollover).
 	bool updatePumpVisualState(bool rawState, bool &prevRaw, unsigned long &windowStartMillis, bool &windowStarted,
 								byte &toggleCount, PumpVisualState &visualState);
+	// Shared stability-timer helper: a newly detected 'target' mode must be seen consistently
+	// for pumpModeStableMillis before it is reported as stable (returns true), so a single
+	// transient/misclassified window can't immediately flip the published pump mode.
+	bool applyStableMode(int target, int currentMode, int &pendingMode, unsigned long &pendingSinceMillis);
 	void classifyPump1();
 	void classifyPump2();
 
@@ -171,7 +175,7 @@ rdr or DRAIN WATER Message
 	bool pump1WindowStarted;
 	byte pump1ToggleCount;
 	PumpVisualState pump1VisualState;
-	Pump1Mode pump1PendingMode;
+	int pump1PendingMode;
 	unsigned long pump1PendingSinceMillis;
 
 	bool pump2PrevRaw;
@@ -179,7 +183,7 @@ rdr or DRAIN WATER Message
 	bool pump2WindowStarted;
 	byte pump2ToggleCount;
 	PumpVisualState pump2VisualState;
-	Pump2Mode pump2PendingMode;
+	int pump2PendingMode;
 	unsigned long pump2PendingSinceMillis;
 	static byte displayDataBuffer[displayDataBufferSize]; 	// Array of display data measurements 
 	static unsigned long clockInterruptTime;

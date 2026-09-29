@@ -533,6 +533,20 @@ bool BalboaInterface::updatePumpVisualState(bool rawState, bool &prevRaw, unsign
     return false;
 }
 
+// Shared stability-timer logic used by both pumps. See header for behaviour details.
+bool BalboaInterface::applyStableMode(int target, int currentMode, int &pendingMode, unsigned long &pendingSinceMillis) {
+
+    unsigned long now = millis();
+
+    if (target != pendingMode) {
+        pendingMode = target;
+        pendingSinceMillis = now;
+        return false;
+    }
+
+    return (target != currentMode && (now - pendingSinceMillis) >= pumpModeStableMillis);
+}
+
 // Classify the Pump 1 icon behaviour into off/flashing/solid over a short sampling window,
 // then map that visual state to a semantic mode, only publishing the new mode once it has
 // been consistently detected for pumpModeStableMillis (so a single transient frame can't flip it).
@@ -546,12 +560,7 @@ void BalboaInterface::classifyPump1() {
         else if (pump1VisualState == PUMP_VISUAL_SOLID)    { target = PUMP1_MODE_HIGH; }
         else                                                { target = PUMP1_MODE_OFF;  }
 
-        unsigned long now = millis();
-        if (target != pump1PendingMode) {
-            pump1PendingMode        = target;
-            pump1PendingSinceMillis = now;
-        }
-        else if (target != pump1Mode && (now - pump1PendingSinceMillis) >= pumpModeStableMillis) {
+        if (applyStableMode(target, pump1Mode, pump1PendingMode, pump1PendingSinceMillis)) {
             pump1Mode = target;
         }
     }
@@ -568,12 +577,7 @@ void BalboaInterface::classifyPump2() {
         // Pump 2: flashing or solid icon both mean the pump is active/on, off means off
         Pump2Mode target = (pump2VisualState == PUMP_VISUAL_OFF) ? PUMP2_MODE_OFF : PUMP2_MODE_ON;
 
-        unsigned long now = millis();
-        if (target != pump2PendingMode) {
-            pump2PendingMode        = target;
-            pump2PendingSinceMillis = now;
-        }
-        else if (target != pump2Mode && (now - pump2PendingSinceMillis) >= pumpModeStableMillis) {
+        if (applyStableMode(target, pump2Mode, pump2PendingMode, pump2PendingSinceMillis)) {
             pump2Mode = target;
         }
     }
