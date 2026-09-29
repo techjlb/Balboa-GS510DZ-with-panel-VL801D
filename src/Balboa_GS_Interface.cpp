@@ -500,8 +500,10 @@ void BalboaInterface::decodeDisplayData() {
 
 // Shared window/toggle-detection logic for both pumps. Counts raw bit toggles within a
 // short sampling window; once the window elapses it classifies the icon as off/flashing/solid
-// and starts a new window. Uses a dedicated 'windowStarted' flag (rather than comparing
-// windowStartMillis to 0) so this remains correct across a millis() rollover.
+// and starts a new window. The 'windowStarted' flag ensures the very first call seeds
+// windowStartMillis from the current millis() value, rather than treating an uninitialized
+// 0 as a real start time (the unsigned subtraction below already handles millis() rollover
+// correctly on its own).
 bool BalboaInterface::updatePumpVisualState(bool rawState, bool &prevRaw, unsigned long &windowStartMillis, bool &windowStarted,
 											 byte &toggleCount, PumpVisualState &visualState) {
 

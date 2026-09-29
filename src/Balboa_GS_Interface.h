@@ -91,8 +91,8 @@ rdr or DRAIN WATER Message
 	bool displayBit45;				// Jumps on/off									| Bit 45			*Pulse on/off 1 sec every 1-5min
 	bool displayBit46;				// Still unknown functionality, if at all used! | Bit 46			* shows as 0 or off havent got it to change
 	bool Lights;        			// SPA lights activated or not 					| Bit 47
-	bool rawPump1;					// Raw Pump 1 display icon segment (on when solid AND when flashing) | Bit 48
-	bool rawPump2;					// Raw Pump 2 display icon segment (on when solid AND when flashing) | Bit 49
+	bool rawPump1;					// Raw Pump 1 display icon segment: on while solid, and toggling on/off while flashing | Bit 48
+	bool rawPump2;					// Raw Pump 2 display icon segment: on while solid, and toggling on/off while flashing | Bit 49
 	bool Pump1;        				// Compatibility bool, derived from pump1Mode (true if not off)
 	bool Pump2;        				// Compatibility bool, derived from pump2Mode (true if not off)
 	Pump1Mode pump1Mode = PUMP1_MODE_OFF;	// Semantic, stabilized Pump 1 mode: off/low/high
@@ -159,6 +159,8 @@ rdr or DRAIN WATER Message
 	enum PumpVisualState { PUMP_VISUAL_OFF, PUMP_VISUAL_FLASHING, PUMP_VISUAL_SOLID };
 	// Shared window/toggle-detection helper used by both pumps. Returns true (and a fresh
 	// visual classification via 'visualState') once a full sampling window has elapsed.
+	// 'windowStarted' seeds windowStartMillis on the first call instead of relying on an
+	// uninitialized 0 value (the unsigned millis() subtraction itself already tolerates rollover).
 	bool updatePumpVisualState(bool rawState, bool &prevRaw, unsigned long &windowStartMillis, bool &windowStarted,
 								byte &toggleCount, PumpVisualState &visualState);
 	void classifyPump1();
