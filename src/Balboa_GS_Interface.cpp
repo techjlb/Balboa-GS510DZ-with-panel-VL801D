@@ -602,21 +602,27 @@ void BalboaInterface::classifyPump1() {
     Pump1 = (pump1Mode != PUMP1_MODE_OFF);
 }
 
-// Same classification approach as Pump 1. Pump 2 only has off/on, and both a solid and a
-// flashing icon indicate the pump is running, so either visual state is mapped to "on".
+// Same classification approach as Pump 1, mapping the visual state to off/low/high. NOTE: this
+// spa's Pump2 icon semantics are the reverse of what you might expect for a "high" state - it is
+// a single-speed pump, so a flashing ("low") icon means it is actually running, while a solid
+// ("high") icon means it is actually off. Adjust here if adapting this library to a spa where
+// Pump2 behaves conventionally (e.g. solid = running).
 void BalboaInterface::classifyPump2() {
 
     if (updatePumpVisualState(rawPump2, pump2PrevRaw, pump2WindowStartMillis, pump2WindowStarted, pump2ToggleCount, pump2VisualState)) {
 
-        // Pump 2: flashing or solid icon both mean the pump is active/on, off means off
-        Pump2Mode target = (pump2VisualState == PUMP_VISUAL_OFF) ? PUMP2_MODE_OFF : PUMP2_MODE_ON;
+        Pump2Mode target;
+        if      (pump2VisualState == PUMP_VISUAL_FLASHING) { target = PUMP2_MODE_LOW;  }
+        else if (pump2VisualState == PUMP_VISUAL_SOLID)    { target = PUMP2_MODE_HIGH; }
+        else                                                { target = PUMP2_MODE_OFF;  }
 
         if (applyStableMode(target, pump2Mode, pump2PendingMode, pump2PendingSinceMillis)) {
             pump2Mode = target;
         }
     }
 
-    Pump2 = (pump2Mode != PUMP2_MODE_OFF);
+    // For this spa, only the flashing/low icon means the single-speed pump is actually running.
+    Pump2 = (pump2Mode == PUMP2_MODE_LOW);
 }
 
 String BalboaInterface::pump1ModeString() {
@@ -626,7 +632,9 @@ String BalboaInterface::pump1ModeString() {
 }
 
 String BalboaInterface::pump2ModeString() {
-    return (pump2Mode == PUMP2_MODE_ON) ? "on" : "off";
+    if      (pump2Mode == PUMP2_MODE_LOW)  { return "low";  }
+    else if (pump2Mode == PUMP2_MODE_HIGH) { return "high"; }
+    else                                    { return "off";  }
 }
 
  ICACHE_RAM_ATTR void BalboaInterface::clockPinInterrupt() {
