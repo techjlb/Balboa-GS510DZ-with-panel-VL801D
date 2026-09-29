@@ -372,13 +372,11 @@ void onSwitchCommand(bool state, HASwitch* sender) {
 //Pump buttons - the panel cycles pump modes on each press (off -> low -> high -> off for
 //Pump1, off -> on -> off for Pump2), so these are momentary commands rather than target states.
 void onPump1Press(HAButton* sender) {
-  Balboa.writeDisplayData = true;
-  Balboa.writePump1       = true;
+  if (!Balboa.queuePump1Press()) Serial.println("Pump1 press queue full");
 }
 
 void onPump2Press(HAButton* sender) {
-  Balboa.writeDisplayData = true;
-  Balboa.writePump2       = true;
+  if (!Balboa.queuePump2Press()) Serial.println("Pump2 press queue full");
 }
 
 //Buttons

@@ -16,6 +16,10 @@ bool BalboaInterface::writeTempDown;
 bool BalboaInterface::writeLights;
 bool BalboaInterface::writePump1;
 bool BalboaInterface::writePump2;
+volatile byte BalboaInterface::pumpCommandQueue[pumpCommandQueueSize];
+volatile byte BalboaInterface::pumpCommandQueueHead;
+volatile byte BalboaInterface::pumpCommandQueueTail;
+byte BalboaInterface::activePumpCommand;
 bool BalboaInterface::writeBlower;
 bool BalboaInterface::writeTimeMenu;
 bool BalboaInterface::writeModeProg;
@@ -48,6 +52,36 @@ BalboaInterface::BalboaInterface(byte setClockPin, byte setReadPin, byte setWrit
   pump2PendingMode         = PUMP2_MODE_OFF;
   pump2PendingSinceMillis  = 0;
      
+}
+
+bool BalboaInterface::queuePump1Press() {
+  return enqueuePumpCommand(1);
+}
+
+bool BalboaInterface::queuePump2Press() {
+  return enqueuePumpCommand(2);
+}
+
+bool BalboaInterface::enqueuePumpCommand(byte command) {
+  byte nextTail = (pumpCommandQueueTail + 1) % pumpCommandQueueSize;
+  if (nextTail == pumpCommandQueueHead) {
+    return false;
+  }
+
+  pumpCommandQueue[pumpCommandQueueTail] = command;
+  pumpCommandQueueTail = nextTail;
+  writeDisplayData = true;
+  return true;
+}
+
+byte BalboaInterface::dequeuePumpCommand() {
+  if (pumpCommandQueueHead == pumpCommandQueueTail) {
+    return 0;
+  }
+
+  byte command = pumpCommandQueue[pumpCommandQueueHead];
+  pumpCommandQueueHead = (pumpCommandQueueHead + 1) % pumpCommandQueueSize;
+  return command;
 }
 
 void BalboaInterface::begin() { 
@@ -640,6 +674,7 @@ String BalboaInterface::pump2ModeString() {
                                   else if (writeLights)      	{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump1)     		{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump2)     		{ digitalWrite(buttonPin,HIGH);  }
+                                  else if ((activePumpCommand = dequeuePumpCommand()) != 0) { digitalWrite(buttonPin,HIGH); }
 								  else if (writeTimeMenu)     	{ digitalWrite(buttonPin,HIGH);  }
 								  else if (writeModeProg)     	{ digitalWrite(buttonPin,HIGH);  } 	
                                   
@@ -655,6 +690,7 @@ String BalboaInterface::pump2ModeString() {
                                   else if (writeLights)				{ digitalWrite(buttonPin,LOW);   }
                                   else if (writePump1)     	  		{ digitalWrite(buttonPin,LOW);   }
                                   else if (writePump2)     	  		{ digitalWrite(buttonPin,LOW);   }
+                                  else if (activePumpCommand == 1 || activePumpCommand == 2) { digitalWrite(buttonPin,LOW); }
 								  else if (writeTimeMenu)     	{ digitalWrite(buttonPin,HIGH);   }	
 								  else if (writeModeProg)     		{ digitalWrite(buttonPin,LOW);	 }	
                           }
@@ -670,6 +706,8 @@ String BalboaInterface::pump2ModeString() {
                                   else if (writeLights)			{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump1)    	  		{ digitalWrite(buttonPin,LOW);   }
                                   else if (writePump2)			{ digitalWrite(buttonPin,HIGH);  }
+                                  else if (activePumpCommand == 1) { digitalWrite(buttonPin,LOW); }
+                                  else if (activePumpCommand == 2) { digitalWrite(buttonPin,HIGH); }
 								  else if (writeTimeMenu)     		{ digitalWrite(buttonPin,LOW);   } 
 								  else if (writeModeProg)     		{ digitalWrite(buttonPin,LOW);   } 
                           }
@@ -684,6 +722,8 @@ String BalboaInterface::pump2ModeString() {
                                   else if (writeLights)   		{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump1)   	 	{ digitalWrite(buttonPin,HIGH);  }
                                   else if (writePump2)				{ digitalWrite(buttonPin,LOW);   }
+                                  else if (activePumpCommand == 1) { digitalWrite(buttonPin,HIGH); }
+                                  else if (activePumpCommand == 2) { digitalWrite(buttonPin,LOW); }
 								  else if (writeTimeMenu)     		{ digitalWrite(buttonPin,LOW);   }    
 								  else if (writeModeProg)     		{ digitalWrite(buttonPin,LOW);   } 	
 
@@ -697,6 +737,7 @@ String BalboaInterface::pump2ModeString() {
                                   writeBlower = false;
 								  writeTimeMenu = false;
 								  writeModeProg = false;
+                                  activePumpCommand = 0;
                         }
                   }
 

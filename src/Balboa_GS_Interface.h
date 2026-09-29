@@ -15,9 +15,10 @@ const unsigned long buttonPressTimerMillis  = 500; 		// Timer between update tem
 const long WaterTempInterval 				= 10000;    // Timer for uppdating water tempreture every 10sec
 
 // Pump icon classification / stabilization tuning
-const unsigned long pumpVisualWindowMillis  = 1000;    // Sampling window used to classify off/flashing/solid
+const unsigned long pumpVisualWindowMillis  = 3000;    // Covers multiple transitions at the panel's ~1s blink cadence
 const byte          pumpFlashToggleThreshold = 2;      // Minimum raw bit toggles within a window to call it "flashing"
 const unsigned long pumpModeStableMillis    = 1000;    // A newly detected mode must persist this long before it is published
+const byte          pumpCommandQueueSize     = 16;
 
 
 
@@ -41,6 +42,8 @@ class BalboaInterface {
     	void resetStatus();                             // Resets the state of all status components as changed for sketches to get the current status	
 	void updateTemperature(float Temperature);			// Function to set the water temperature 	
 	void HVACupdateTemperature(float Temperature);		// Function to set the HVAC water temperature 
+	bool queuePump1Press();
+	bool queuePump2Press();
 	
 	bool isInitialized = false;							// Define a flag to track if the initialization has been done of setTempreture on start up
 	bool ModeChange = false;	
@@ -169,6 +172,8 @@ rdr or DRAIN WATER Message
 	bool applyStableMode(int target, int currentMode, int &pendingMode, unsigned long &pendingSinceMillis);
 	void classifyPump1();
 	void classifyPump2();
+	static bool enqueuePumpCommand(byte command);
+	static byte dequeuePumpCommand();
 
 	bool pump1PrevRaw;
 	unsigned long pump1WindowStartMillis;
@@ -185,6 +190,10 @@ rdr or DRAIN WATER Message
 	PumpVisualState pump2VisualState;
 	int pump2PendingMode;
 	unsigned long pump2PendingSinceMillis;
+	static volatile byte pumpCommandQueue[pumpCommandQueueSize];
+	static volatile byte pumpCommandQueueHead;
+	static volatile byte pumpCommandQueueTail;
+	static byte activePumpCommand;
 	static byte displayDataBuffer[displayDataBufferSize]; 	// Array of display data measurements 
 	static unsigned long clockInterruptTime;
 	static int clockBitCounter;               		 		// Counter of pulses within a cycle
